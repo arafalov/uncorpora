@@ -11,6 +11,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
@@ -18,15 +19,19 @@ import java.util.List;
 import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.xml.namespace.QName;
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLEventWriter;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.events.StartElement;
+import javax.xml.stream.events.XMLEvent;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
 import org.kohsuke.args4j.Option;
+import org.xml.sax.XMLReader;
 
 /**
  * Processor:
@@ -40,6 +45,8 @@ import org.kohsuke.args4j.Option;
 public class Processor
 {
 
+    private static final QName QNAME_TU = new QName("tu");
+
     private void run() throws XMLStreamException, UnsupportedEncodingException, FileNotFoundException
     {
         XMLInputFactory xmlInputFactory = XMLInputFactory.newInstance();
@@ -47,6 +54,31 @@ public class Processor
 
         XMLOutputFactory xmlOutputFactory = XMLOutputFactory.newInstance();
         final XMLEventWriter eventWriter = xmlOutputFactory.createXMLEventWriter(new BufferedWriter(new OutputStreamWriter((outFile==null?System.out:new FileOutputStream(outFile)), CHARSET_UTF8), BUFFER_SIZE));
+
+        //To skip vote, we need to hold TU until we see PROP/@type='vote' or first TUV
+        //To extract specific session, hold TU until we see PROP/@type='session' and its text or first TUV
+        //To skip language, look for TUV/@xml:lang
+        //To remove footnote, look for SUB/@type='fnote'
+        //To inline symbol, look for HI/@type='symbol' and then let only text through
+
+        ArrayDeque<XMLEvent> eventQueue = new ArrayDeque<XMLEvent>(20);
+
+
+        boolean holdTU = false;
+
+        while (eventReader.hasNext())
+        {
+            XMLEvent event = eventReader.nextEvent();
+            eventQueue.add(event);
+            if (event instanceof StartElement)
+            {
+                if (holdTU)
+                if (QNAME_TU.equals(event.asStartElement().getName()))
+                {
+                    holdTU=true;
+                }
+            }
+        }
 
 
     }
@@ -69,11 +101,6 @@ public class Processor
             return;
         }
 
-        //To skip language, look for TUV/@xml:lang
-        //To skip vote, we need to hold TU until we see PROP/@type='vote' or first TUV
-        //To remove footnote, look for SUB/@type='fnote'
-        //To inline symbol, look for HI/@type='symbol' and then let only text through
-        //To extract specific session, hold TU until we see PROP/@type='session' and its text
 
         System.out.println("START: " + (new Date()));
         try
